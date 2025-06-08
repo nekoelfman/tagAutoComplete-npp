@@ -1,9 +1,9 @@
-# tag-autocomplete-npp
+# tagAutoComplete-npp
 Tag Auto Completion for Notepad++ Python Script.
 
 ![](screenshot_01.png)
 
-tag-autocomplete-npp はNotepad++上に入力補完機能(いわゆるTag Autocomplete)を実装するスクリプトです。
+tagAutoComplete-npp はNotepad++上に入力補完機能(いわゆるTag Autocomplete)を実装するスクリプトです。
 
 ## 導入方法
 - Notepad++用のプラグイン [Python Script](https://github.com/bruderstein/PythonScript) を利用します。事前にNotepad++に導入してください。
