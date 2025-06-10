@@ -16,9 +16,10 @@ import csv
 #     CSVファイルの一行目にヘッダー行がある場合は削除してください
 #   スペースを含むタグを補完する時はスペースをアンダーバーに置き換えて入力してください
 #     例: flat chest -> flat_chest
+#   ハイフンを含む単語が補完出来ない時はNotepad++の [設定] -> [環境設定] -> [区切り記号] -> [単語の一部と見なす文字を追加する] にハイフンを追加してください
 #
 # 注意点
-#   設定を変更したりスクリプト自体を終了する場合は一旦Notepad++を終了させてください
+#   スクリプトを実行中にもう一度スクリプトを実行すると、スクリプトが終了します
 #   挙動がおかしい時は [プラグイン] -> [Python Script] -> [Show Console] の出力を確認してください
 #     AutoComplete ENABLED for file: ... が表示されていない場合は有効化されていません
 #   部分一致は不安定です。誰か原因を教えて...
@@ -36,6 +37,7 @@ import csv
 #   NUM_SHOW: 入力候補を表示するまでに必要な文字数
 #   MAX_SHOW_WORDS: メニューに表示する候補の最大値
 #   REPLACE_UB_TO_SPACE: アンダーバーをスペースに置換する
+#   ESCAPE_CHAR: エスケープする特殊文字等
 #   TEXT_SEPARATER: タグの末尾に付ける区切り文字
 #   OPT_WORD_IN: タグ検索時の設定
 #     - True: 部分一致(例: behindと入力した時にfrom_behindが候補に出る)
@@ -46,6 +48,7 @@ TAG_FILENAME = 'danbooru.csv'
 NUM_SHOW = 2
 MAX_SHOW_WORDS = 7
 REPLACE_UB_TO_SPACE = True
+ESCAPE_CHAR = '()'
 TEXT_SEPARATER = ', '
 OPT_WORD_IN = False
 
@@ -75,12 +78,12 @@ def load_words_from_csv(filepath):
         # ファイルが存在しない場合は、コンソールにメッセージを表示するだけ
         console.write("Info: {} not found. Skipping.\n".format(os.path.basename(filepath)))
         console.write("タグ補完に使用するファイルが無い\n")
-        exit
+        words = []
     except Exception as e:
         # その他のエラーが発生した場合
         console.write("Error reading {}: {}\n".format(os.path.basename(filepath), e))
         console.write("タグ補完に使用するファイルが読み込めなかった\n")
-        exit
+        words = []
 
     return words
 
@@ -118,6 +121,23 @@ def on_char_added(args):
 
 
 # ----------------------------------------------------------------------------------------
+# 文字列を加工する
+def process_string(s):
+    # アンダーバーをスペースに置換
+    if REPLACE_UB_TO_SPACE:
+        s = s.replace('_',' ')
+
+    # 指定した文字をエスケープする
+    for c in ESCAPE_CHAR:
+        s = s.replace(c, '\\' + c)
+
+    # 末尾に区切り文字を付ける
+    s = s + TEXT_SEPARATER
+
+    return s
+
+
+# ----------------------------------------------------------------------------------------
 # オートコンプリート項目選択後の加工処理
 def on_autocompletion_selected(args):
     """
@@ -129,19 +149,11 @@ def on_autocompletion_selected(args):
     current_pos = editor.getCurrentPos()
     replace_start_pos = current_pos - len(selected_text) # テキスト置換の開始位置
 
-    output_text = selected_text
-
-    # アンダーバーをスペースに置換
-    if REPLACE_UB_TO_SPACE:
-        output_text = output_text.replace('_',' ')
-
-    # 末尾に区切り文字を付ける
-    output_text = output_text + TEXT_SEPARATER
-
+    output_text = process_string(selected_text) # 文字列を加工する
     cursor_offset = len(output_text) # 最終的にカーソルを移動する位置
 
     if selected_text == output_text:
-        return # 加工する必要無し
+        return # 加工した文字列と置換する必要無し
 
     # 選択された元のテキストを、加工後のテキストで置き換える
     editor.setTargetRange(replace_start_pos, current_pos)
@@ -152,12 +164,11 @@ def on_autocompletion_selected(args):
     editor.gotoPos(final_cursor_pos)
 
 
-
 # ----------------------------------------------------------------------------------------
 # ファイル（バッファ）が切り替わった時の処理
 def on_buffer_activated(args):
 
-    # バッファが切り替わった時は(二重に登録されてしまうため事を防ぐため)一旦コールバックを解除する
+    # バッファが切り替わった時は(二重に登録されてしまう事を防ぐため)一旦コールバックを解除する
     editor.clearCallbacks([SCINTILLANOTIFICATION.CHARADDED, SCINTILLANOTIFICATION.AUTOCSELECTION])
 
     # 特定のファイル名、または特定の拡張子で判定
@@ -172,14 +183,27 @@ def on_buffer_activated(args):
 # ----------------------------------------------------------------------------------------
 # スクリプトの初期化
 
-# スクリプト自身のパスを取得して、CSVファイルのフルパスを構築
-script_dir = os.path.dirname(__file__.decode('utf-8')) # パスが非ASCII文字を含む場合に備える
-csv_filepath = os.path.join(script_dir, TAG_FILENAME)
+# スクリプトが既に実行されている場合は終了する
+if 'TAG_AUTOCOMPLETE_SCRIPT_ACTIVE' in globals() and globals()['TAG_AUTOCOMPLETE_SCRIPT_ACTIVE']:
+    # 登録してあるコールバックを解除する
+    notepad.clearCallbacks([NOTIFICATION.BUFFERACTIVATED])
+    editor.clearCallbacks([SCINTILLANOTIFICATION.CHARADDED, SCINTILLANOTIFICATION.AUTOCSELECTION])
+    globals()['TAG_AUTOCOMPLETE_SCRIPT_ACTIVE'] = False
+    console.write("tagAutoComplete has been deactivated.\n")
 
-# CSVファイルから単語を読み込む
-tags = load_words_from_csv(csv_filepath)
-if len(tags):
-    # BUFFERACTIVATED イベントが発生するたびに on_buffer_activated を呼び出すよう登録
-    notepad.callback(on_buffer_activated, [NOTIFICATION.BUFFERACTIVATED])
-    # スクリプト実行時に、現在開いているファイルに対して一度チェックを実行
-    on_buffer_activated(None) 
+else:
+    # スクリプト自身のパスを取得して、CSVファイルのフルパスを構築
+    script_dir = os.path.dirname(__file__.decode('utf-8')) # パスが非ASCII文字を含む場合に備える
+    csv_filepath = os.path.join(script_dir, TAG_FILENAME)
+
+    # CSVファイルから単語を読み込む
+    tags = load_words_from_csv(csv_filepath)
+    if len(tags):
+        # BUFFERACTIVATED イベントが発生するたびに on_buffer_activated を呼び出すよう登録
+        notepad.callback(on_buffer_activated, [NOTIFICATION.BUFFERACTIVATED])
+        # スクリプト実行時に、現在開いているファイルに対して一度チェックを実行
+        on_buffer_activated(None)
+
+        # 多重実行防止フラグを立てる
+        globals()['TAG_AUTOCOMPLETE_SCRIPT_ACTIVE'] = True
+        console.write("tagAutoComplete has been activated.\n")
