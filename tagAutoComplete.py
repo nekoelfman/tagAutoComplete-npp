@@ -22,7 +22,6 @@ import csv
 #   スクリプトを実行中にもう一度スクリプトを実行すると、スクリプトが終了します
 #   挙動がおかしい時は [プラグイン] -> [Python Script] -> [Show Console] の出力を確認してください
 #     AutoComplete ENABLED for file: ... が表示されていない場合は有効化されていません
-#   部分一致は不安定です。誰か原因を教えて...
 
 # ----------------------------------------------------------------------------------------
 # 設定項目
@@ -42,7 +41,6 @@ import csv
 #   OPT_WORD_IN: タグ検索時の設定
 #     - True: 部分一致(例: behindと入力した時にfrom_behindが候補に出る)
 #     - False: 前方一致(例: behindと入力した時にfrom_behindは出ない)
-
 TARGET_FILENAME = '.txt'
 TAG_FILENAME = 'danbooru.csv'
 NUM_SHOW = 2
@@ -50,9 +48,11 @@ MAX_SHOW_WORDS = 7
 REPLACE_UB_TO_SPACE = True
 ESCAPE_CHAR = '()'
 TEXT_SEPARATER = ', '
-OPT_WORD_IN = False
+OPT_WORD_IN = True
+
 
 tags = []
+g_current_word = ""
 
 # ----------------------------------------------------------------------------------------
 # ファイルからタグ一覧を読み込む
@@ -111,11 +111,15 @@ def on_char_added(args):
 
     # 候補が存在する時にメニューを表示
     if suggestions:
+        # 項目選択後の処理の為にcurrent_wordをグローバル変数にセットする (部分一致に対応するため)
+        global g_current_word
+        g_current_word = current_word
+
         # 現在のセパレーターの設定を取得する
         current_sep = editor.autoCGetSeparator()
         # リストのセパレーターを','(Ascii:44)に変更する
         editor.autoCSetSeparator(44)
-        editor.autoCShow(len(current_word), ",".join(suggestions))
+        editor.autoCShow(0, ",".join(suggestions)) # 部分一致に対応するため入力済みの文字数を0にしている
         # セパレーターを元の設定に戻す
         editor.autoCSetSeparator(current_sep)
 
@@ -147,21 +151,17 @@ def on_autocompletion_selected(args):
 
     selected_text = args['text']
     current_pos = editor.getCurrentPos()
-    replace_start_pos = current_pos - len(selected_text) # テキスト置換の開始位置
+    replace_start_pos = current_pos - len(g_current_word) - len(selected_text) # テキスト置換の開始位置(入力済み文字数 + メニューから選択した文字数 だけ戻る)
 
     output_text = process_string(selected_text) # 文字列を加工する
     cursor_offset = len(output_text) # 最終的にカーソルを移動する位置
 
-    if selected_text == output_text:
-        return # 加工した文字列と置換する必要無し
-
     # 選択された元のテキストを、加工後のテキストで置き換える
     editor.setTargetRange(replace_start_pos, current_pos)
     editor.replaceTarget(output_text)
-    
+
     # カーソル位置を計算して移動
-    final_cursor_pos = replace_start_pos + cursor_offset
-    editor.gotoPos(final_cursor_pos)
+    editor.gotoPos(replace_start_pos + cursor_offset)
 
 
 # ----------------------------------------------------------------------------------------
@@ -183,12 +183,15 @@ def on_buffer_activated(args):
 # ----------------------------------------------------------------------------------------
 # スクリプトの初期化
 
+GLOBAL_ACTIVE_FLAG = 'TAG_AUTOCOMPLETE_SCRIPT_ACTIVE'
+
 # スクリプトが既に実行されている場合は終了する
-if 'TAG_AUTOCOMPLETE_SCRIPT_ACTIVE' in globals() and globals()['TAG_AUTOCOMPLETE_SCRIPT_ACTIVE']:
+if GLOBAL_ACTIVE_FLAG in globals() and globals()[GLOBAL_ACTIVE_FLAG]:
     # 登録してあるコールバックを解除する
     notepad.clearCallbacks([NOTIFICATION.BUFFERACTIVATED])
     editor.clearCallbacks([SCINTILLANOTIFICATION.CHARADDED, SCINTILLANOTIFICATION.AUTOCSELECTION])
-    globals()['TAG_AUTOCOMPLETE_SCRIPT_ACTIVE'] = False
+
+    globals()[GLOBAL_ACTIVE_FLAG] = False
     console.write("tagAutoComplete has been deactivated.\n")
 
 else:
@@ -205,5 +208,5 @@ else:
         on_buffer_activated(None)
 
         # 多重実行防止フラグを立てる
-        globals()['TAG_AUTOCOMPLETE_SCRIPT_ACTIVE'] = True
+        globals()[GLOBAL_ACTIVE_FLAG] = True
         console.write("tagAutoComplete has been activated.\n")
