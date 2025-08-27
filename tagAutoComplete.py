@@ -224,7 +224,7 @@ class TagAutoComplete(object):
         # TRIM_SEPARATER_SPACEがTrueの時にタグと区切り文字の間の空白を削除する
         if TRIM_SEPARATER_SPACE is True:
             i = 0
-            while current_pos + i <= max_len:
+            while current_pos + i < max_len:
                 if editor.getTextRange(current_pos + i, current_pos + i + 1) != ' ':
                     replace_end_pos += i
                     break
