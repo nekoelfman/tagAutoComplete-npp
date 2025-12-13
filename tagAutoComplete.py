@@ -10,7 +10,7 @@ from Npp import editor, notepad, console, SCINTILLANOTIFICATION, NOTIFICATION
 # *** 利用前の設定 ***
 #   - / や - 等の文字はNotepad++の標準の設定では単語の一部として認識されません
 #   - 補完にそれらの文字を使用する場合は、Notepad++の [設定]->[環境設定]->[区切り記号]->[単語の一部と見なす文字を追加する] に文字を追加してください
-#   - ワイルドカード補完機能を使用する場合は、 / の登録が必須です
+#   - ワイルドカード補完機能を使用する場合は / の登録が必須です
 #   - Notepad++全体に影響する設定ですので、他の機能に影響する可能性があります
 #
 # 説明
@@ -60,7 +60,7 @@ ESCAPE_CHAR = '()'
 TEXT_SEPARATER = ', '
 TRIM_SEPARATER_SPACE = True
 OPT_WORD_IN = True
-WILDCARD_DIR = r'D:\share\img_gen\wildcards'
+WILDCARD_DIR = r'C:\my\wildcard'
 
 
 class TagManager(object):
