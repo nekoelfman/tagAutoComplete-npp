@@ -6,24 +6,28 @@ import csv
 from Npp import editor, notepad, console, SCINTILLANOTIFICATION, NOTIFICATION
 
 # ----------------------------------------------------------------------------------------
+#
+# *** 利用前の設定 ***
+#   - / や - 等の文字はNotepad++の標準の設定では単語の一部として認識されません
+#   - 補完にそれらの文字を使用する場合は、Notepad++の [設定]->[環境設定]->[区切り記号]->[単語の一部と見なす文字を追加する] に文字を追加してください
+#   - ワイルドカード補完機能を使用する場合は、 / の登録が必須です
+#   - Notepad++全体に影響する設定ですので、他の機能に影響する可能性があります
+#
 # 説明
 #   A1111やComfyUIでおなじみのTag Auto CompleteのNotepad++での実装を目指しています
 #   ComfyUIのLoadTextノード等と合わせてご利用ください
 #   Python Script plugin for Notepad++[https://github.com/bruderstein/PythonScript]を利用します
-#     [プラグイン] -> [プラグイン管理] から [PythonScript]プラグインをインストールしてください
-#     PythonScriptのバージョン2.1で動作を確認しています
+#     - Notepad++の [プラグイン]->[プラグイン管理] から PythonScript プラグインをインストールしてください
+#     - PythonScriptのバージョン2.1で動作を確認しています
 #   スクリプトと同じフォルダにあるファイルからタグ一覧を取得します
-#     CSVファイルの各行の一列目の値をタグとして扱います
-#     CSVファイルの一行目にヘッダー行がある場合は削除してください
+#     - CSVファイルの各行の一列目の値をタグとして扱います
+#     - CSVファイルの一行目にヘッダー行がある場合は削除してください
 #   スペースを含むタグを補完する時はスペースをアンダーバーに置き換えて入力してください
 #     例: flat chest -> flat_chest
-#   ハイフンを含む単語が補完出来ない時はNotepad++の [設定] -> [環境設定] -> [区切り記号] -> [単語の一部と見なす文字を追加する] にハイフンを追加してください
-#
-# 注意点
 #   スクリプトを実行中にもう一度スクリプトを実行すると、スクリプトが終了します
-#   挙動がおかしい時は [プラグイン] -> [Python Script] -> [Show Console] の出力を確認してください
+#   挙動がおかしい時はNotepad++の [プラグイン]->[Python Script]->[Show Console] でコンソールの出力を確認してください
 #     AutoComplete ENABLED for file: ... が表示されていない場合は有効化されていません
-
+#
 # ----------------------------------------------------------------------------------------
 # 設定項目
 #   以下の変数の値を変更する事で設定を変更できます
@@ -40,10 +44,12 @@ from Npp import editor, notepad, console, SCINTILLANOTIFICATION, NOTIFICATION
 #   ESCAPE_CHAR: エスケープする特殊文字等
 #   TEXT_SEPARATER: タグの末尾に付ける区切り文字
 #   TRIM_SEPARATER_SPACE: タグと区切り文字の間にあるスペースを削除する
-# //  VALID_SYMBOLS: 英数時以外の有効な記号(一部の文字 , ' 等は使用出来ません)
 #   OPT_WORD_IN: タグ検索時の設定
 #     - True: 部分一致(例: behindと入力した時にfrom_behindが候補に出る)
 #     - False: 前方一致(例: behindと入力した時にfrom_behindは出ない)
+#   WILDCARD_DIR: ワイルドカードファイルが保存されているディレクトリ(空にするとワイルドカード入力の補完を無効化します)
+#     - ワイルドカードファイルはテキスト形式(拡張子:txt)のみ対応しています
+#     - パスの\は\\に置き換えてください
 
 TARGET_FILENAME = '.txt'
 TAG_FILENAME = 'danbooru.csv'
@@ -53,8 +59,143 @@ REPLACE_UB_TO_SPACE = True
 ESCAPE_CHAR = '()'
 TEXT_SEPARATER = ', '
 TRIM_SEPARATER_SPACE = True
-# // VALID_SYMBOLS = r'_-=+?!@.:)(><^\|/"' 
 OPT_WORD_IN = True
+WILDCARD_DIR = r'D:\share\img_gen\wildcards'
+
+
+class TagManager(object):
+    """
+    タグファイル関連の操作を行なうクラス
+    """
+
+    # ----------------------------------------------------------------------------------------
+    def __init__(self):
+        self.tags = []
+
+    # ----------------------------------------------------------------------------------------
+    def load_tagfile(self, filepath):
+        """
+        タグファイルを読み込む
+        filepath: タグファイルのパス
+        """
+        self.tags = []
+        try:
+            with open(filepath, 'r') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if row and row[0].strip():  # 行が空でなく、かつ最初の列に値がある場合のみ処理
+                        self.tags.append(row[0].strip().decode('utf-8'))  # UTF-8にデコードしてPythonのユニコード文字列として扱う
+            return True
+
+        except IOError:
+            # ファイルが存在しない場合は、コンソールにメッセージを表示するだけ
+            console.write("Info: {} not found. Skipping.\n".format(os.path.basename(filepath)))
+        except Exception as e:
+            # その他のエラーが発生した場合
+            console.write("Error reading {}: {}\n".format(os.path.basename(filepath), e))
+        return False
+
+    # ----------------------------------------------------------------------------------------
+    def tag_suggest(self, s, max_num, word_in):
+        """
+        タグの補完候補一覧を返す
+        s: 補完候補の取得に使用する文字列
+        max_num: 取得するデータの最大個数
+        word_in: Trueで部分一致、Falseで前方一致
+        """
+
+        suggestions = []
+        ss = s.lower()
+        for word in self.tags:
+            if len(suggestions) >= max_num:
+                break
+
+            if OPT_WORD_IN: # 部分一致
+                if ss in word.lower():
+                    suggestions.append(word)
+            else: # 前方一致
+                if word.lower().startswith(ss):
+                    suggestions.append(word)
+
+        return suggestions
+
+    def get_tag_num(self):
+        """
+        タグの個数を返す
+        """
+        return len(self.tags)
+
+
+class WildcardManager(object):
+    """
+    Wildcard関連の操作を行なうクラス
+    """
+
+    # ----------------------------------------------------------------------------------------
+    def __init__(self):
+        self.dir_list = []
+        self.txt_list = []
+        self.suggest_list = []
+
+    # ----------------------------------------------------------------------------------------
+    def load_wildcards(self, d):
+        """
+        wildcardファイル、ディレクトリの一覧を取得
+        d: wildcardディレクトリのパス
+        """
+        if not os.path.exists(d):
+            return
+        self.dir_list = []
+        self.txt_list = []
+        self.suggest_list = []
+
+        # ディレクトリとファイルのリストを取得する
+        d_len = len(d) if d.endswith('\\') else len(d) + 1
+        for dirpath, dirname, files in os.walk(d):
+            self.dir_list.append(dirpath[d_len:].replace('\\','/'))  # ディレクトリパスを整形してリストに追加
+            for file in files:
+                if file.endswith('.txt'):
+                    s = os.path.join(dirpath,file)
+                    self.txt_list.append(s[d_len:].replace('\\','/').replace('.txt',''))  # ファイルパスを整形してリストに追加
+        self.suggest_list = sorted(list(filter(None, self.dir_list + self.txt_list)))
+
+    # ----------------------------------------------------------------------------------------
+    def wildcard_suggest(self, s, max_num, word_in):
+        """
+        wildcardの補完候補一覧を返す
+        s: 補完候補の取得に使用する文字列
+        max_num: 取得するデータの最大個数
+        word_in: Trueで部分一致、Falseで前方一致
+        """
+        suggestions = []
+        ss = s[2:].lower()  # 検索文字列の整形(先頭の__を削る、小文字化)
+        for word in self.suggest_list:
+            if len(suggestions) >= max_num:
+                break
+
+            if word_in:
+                if ss in word.lower():
+                    suggestions.append(word)  # 部分一致した候補をリストに追加
+            else:
+                if word.lower().startswith(ss):
+                    suggestions.append(word)  # 前方一致した候補をリストに追加
+
+        return suggestions
+
+    # ----------------------------------------------------------------------------------------
+    def item_is_dir(self, s):
+        """
+        候補がディレクトリかファイルかを判別する
+        s: 調査する候補
+        """
+        return s in self.dir_list
+
+    # ----------------------------------------------------------------------------------------
+    def get_wildcard_num(self):
+        """
+        ワイルドカードの個数(ディレクトリとファイルの数)を返す
+        """
+        return len(self.suggest_list)
 
 
 class TagAutoComplete(object):
@@ -70,13 +211,19 @@ class TagAutoComplete(object):
     def __init__(self, csvfile):
         if not hasattr(self, 'initialized'):
             self.current_word = ""
-            self.tags = self.read_tags_from_file(csvfile) # CSVファイルからタグを読み込み
-            if len(self.tags):
+
+            self.wcm = WildcardManager()
+            if WILDCARD_DIR:
+                self.wcm.load_wildcards(WILDCARD_DIR)
+                console.write("Successfully loaded {} wildcards(dirs and files) from {}\n".format(self.wcm.get_wildcard_num(), WILDCARD_DIR))
+
+            self.tm = TagManager()
+            if self.tm.load_tagfile(csvfile):
+                console.write("Successfully loaded {} tags from {}\n".format(self.tm.get_tag_num(), os.path.basename(csvfile)))
+                console.write("tagAutoComplete has been activated.\n")
                 # BUFFERACTIVATED イベントが発生するたびに on_buffer_activated を呼び出すよう登録
                 notepad.callback(self.on_buffer_activated, [NOTIFICATION.BUFFERACTIVATED])
-                # スクリプト実行時に、現在開いているファイルに対して一度チェックを実行
-                self.on_buffer_activated(None)
-                console.write("tagAutoComplete has been activated.\n")
+                self.on_buffer_activated(None)  # スクリプト起動時に現在開いているファイルに対してon_buffer_activatedを実行
 
     # ----------------------------------------------------------------------------------------
     def destroy_instance(cls):
@@ -90,87 +237,25 @@ class TagAutoComplete(object):
         return cls._instance
 
     # ----------------------------------------------------------------------------------------
-    def read_tags_from_file(self, filepath):
-        """
-        CSVファイルを読み込み、各行の最初の列から値を取得してリストを返す
-        """
-
-        tags = []
-        try:
-            with open(filepath, 'r') as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    # 行が空でなく、かつ最初の列に値がある場合のみ処理
-                    if row and row[0].strip():
-                        tags.append(row[0].strip().decode('utf-8')) # UTF-8にデコードしてPythonのユニコード文字列として扱う
-
-            console.write("Successfully loaded {} tags from {}\n".format(len(tags), os.path.basename(filepath)))
-
-        except IOError:
-            # ファイルが存在しない場合は、コンソールにメッセージを表示するだけ
-            console.write("Info: {} not found. Skipping.\n".format(os.path.basename(filepath)))
-            console.write("タグ補完に使用するファイルが無い\n")
-            tags = []
-        except Exception as e:
-            # その他のエラーが発生した場合
-            console.write("Error reading {}: {}\n".format(os.path.basename(filepath), e))
-            console.write("タグ補完に使用するファイルが読み込めなかった\n")
-            tags = []
-
-        return tags
-
-    # ----------------------------------------------------------------------------------------
-    def get_current_word(self):
-        """
-        現在の単語(記号等も含めた有効なワード)を取得する
-        # //  有効な文字[a-z][A-Z][0-9]とVALID_SYMBOLS
-        """
-        current_pos = editor.getCurrentPos()
-        current_word = editor.getWord(current_pos, True)
-        self.current_word = current_word # 項目選択後の処理の為にcurrent_wordをインスタンス変数にセットする(部分一致に対応するため)
-
-        # -------------------
-        # TODO
-        # -------------------
-        #
-        # VALID_SYMBOLSの有効化
-        # ()や{}等の処理をもうちょっとどうにかする
-        # タグの強度(:1.1 みたいなの)を付けられるようにしたい
-
-
-
-        return current_word
-
-
-    # ----------------------------------------------------------------------------------------
     def on_char_added(self, args):
         """
         文字入力時の補完処理
         """
-    
-        current_word = self.get_current_word()
-        if len(current_word) < NUM_SHOW:
-            return
+        self.current_word = editor.getWord(editor.getCurrentPos(), True)  # 現在の単語(Notepad++が単語として認識する文字列)を取得する
+        if len(self.current_word) < NUM_SHOW:
+            return  # 最低入力文字数に達してない
 
-        suggestions = []
-        for word in self.tags:
-            if len(suggestions) >= MAX_SHOW_WORDS:
-                break
-
-            if OPT_WORD_IN: # 部分一致
-                if current_word.lower() in word.lower():
-                    suggestions.append(word)
-            else: # 前方一致
-                if word.lower().startswith(current_word.lower()):
-                    suggestions.append(word)
+        if self.current_word.startswith('__') and WILDCARD_DIR:  # ワイルドカード補完
+            suggestions = self.wcm.wildcard_suggest(self.current_word, MAX_SHOW_WORDS, OPT_WORD_IN)
+        else:  # タグ補完
+            suggestions = self.tm.tag_suggest(self.current_word, MAX_SHOW_WORDS, OPT_WORD_IN)
 
         # 候補が存在する時にメニューを表示
         if suggestions:
-            current_sep = editor.autoCGetSeparator() # 現在のセパレーターの設定を取得する
-            editor.autoCSetSeparator(44) # リストのセパレーターを','(Ascii:44)に変更する
+            current_sep = editor.autoCGetSeparator() # Notepad++のセパレーター設定を取得する
+            editor.autoCSetSeparator(44) # セパレーター設定を','(Ascii:44)に変更する
             editor.autoCShow(0, ",".join(suggestions)) # 部分一致に対応するため入力済みの文字数を0にしている
-            editor.autoCSetSeparator(current_sep) # セパレーターを元の設定に戻す
-
+            editor.autoCSetSeparator(current_sep) # セパレーター設定を元に戻す
 
     # ----------------------------------------------------------------------------------------
     def on_buffer_activated(self, args):
@@ -189,20 +274,24 @@ class TagAutoComplete(object):
             editor.callback(self.on_autocompletion_selected, [SCINTILLANOTIFICATION.AUTOCSELECTION])
             console.write("AutoComplete ENABLED for file: {}\n".format(current_filename))
 
-
     # ----------------------------------------------------------------------------------------
     def process_string(self, s):
         """
         文字列を加工する
+        s: オートコンプリートで選択された候補の文字列
         """
+        if self.current_word.startswith('__') and WILDCARD_DIR:  # ワイルドカードの加工処理
+            if self.wcm.item_is_dir(s):
+                s = s + '/*'  # 候補がディレクトリの場合は末尾に /* を付ける
+            s = '__' + s + '__'
+        else:
+            # アンダーバーをスペースに置換
+            if REPLACE_UB_TO_SPACE:
+                s = s.replace('_',' ')
 
-        # アンダーバーをスペースに置換
-        if REPLACE_UB_TO_SPACE:
-            s = s.replace('_',' ')
-
-        # 指定した文字をエスケープする
-        for c in ESCAPE_CHAR:
-            s = s.replace(c, '\\' + c)
+            # 指定した文字をエスケープする
+            for c in ESCAPE_CHAR:
+                s = s.replace(c, '\\' + c)
 
         return s
 
@@ -243,16 +332,6 @@ class TagAutoComplete(object):
 
         # カーソル位置を計算して移動
         editor.gotoPos(replace_start_pos + len(output_text))
-
-
-# ----------------------------------------------------------------------------------------
-# ディレクトリから指定したファイルの一覧を読み込む
-# def get_filelist_from_dir(dir):
-#    return
-
-
-
-
 
 
 

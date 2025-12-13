@@ -1,0 +1,5 @@
+PythonScript Help docs
+file:///C:/Program%20Files/Notepad++/plugins/PythonScript/doc/index.html
+
+PythonScript用のスクリプトは以下のフォルダに入れる
+%APPDATA%\Notepad++\plugins\config\PythonScript\scripts\
