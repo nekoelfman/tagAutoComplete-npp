@@ -39,10 +39,10 @@ tagAutoComplete-npp はNotepad++上に入力補完機能(いわゆるTag Autocom
 - 区切り文字 ', '
 - タグと区切り文字の間にある半角スペースを削除する
 - 部分一致で検索
-- (デフォルトの設定を変更する時は tagAutoComplete.py をテキストエディタで開いて、説明文の下にある変数の値を変えてください)
+- __デフォルトの設定を変更する時は tagAutoComplete.py をテキストエディタで開いて、説明文の下にある変数の値を変えてください__
 
 ## ワイルドカード補完
-- tagAutoComplete.py をテキストエディタで開いて WILDCARD_DIR = r'C:\my\wildcard' の値をワイルドカードを保存しているフォルダに変更してください
+- __tagAutoComplete.py をテキストエディタで開いて WILDCARD_DIR = r'C:\my\wildcard' の値をワイルドカードを保存しているフォルダに変更してください__
 - __から開始する単語はワイルドカードとして認識されます
 
 ![](screenshot_02.png)

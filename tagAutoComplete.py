@@ -49,7 +49,6 @@ from Npp import editor, notepad, console, SCINTILLANOTIFICATION, NOTIFICATION
 #     - False: 前方一致(例: behindと入力した時にfrom_behindは出ない)
 #   WILDCARD_DIR: ワイルドカードファイルが保存されているディレクトリ(空にするとワイルドカード入力の補完を無効化します)
 #     - ワイルドカードファイルはテキスト形式(拡張子:txt)のみ対応しています
-#     - パスの\は\\に置き換えてください
 
 TARGET_FILENAME = '.txt'
 TAG_FILENAME = 'danbooru.csv'
@@ -144,7 +143,7 @@ class WildcardManager(object):
         d: wildcardディレクトリのパス
         """
         if not os.path.exists(d):
-            return
+            return False
         self.dir_list = []
         self.txt_list = []
         self.suggest_list = []
@@ -158,6 +157,8 @@ class WildcardManager(object):
                     s = os.path.join(dirpath,file)
                     self.txt_list.append(s[d_len:].replace('\\','/').replace('.txt',''))  # ファイルパスを整形してリストに追加
         self.suggest_list = sorted(list(filter(None, self.dir_list + self.txt_list)))
+
+        return True
 
     # ----------------------------------------------------------------------------------------
     def wildcard_suggest(self, s, max_num, word_in):
@@ -214,8 +215,8 @@ class TagAutoComplete(object):
 
             self.wcm = WildcardManager()
             if WILDCARD_DIR:
-                self.wcm.load_wildcards(WILDCARD_DIR)
-                console.write("Successfully loaded {} wildcards(dirs and files) from {}\n".format(self.wcm.get_wildcard_num(), WILDCARD_DIR))
+                if self.wcm.load_wildcards(WILDCARD_DIR):
+                    console.write("Successfully loaded {} wildcards(dirs and files) from {}\n".format(self.wcm.get_wildcard_num(), WILDCARD_DIR))
 
             self.tm = TagManager()
             if self.tm.load_tagfile(csvfile):
