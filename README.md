@@ -43,6 +43,11 @@ tagAutoComplete-npp はNotepad++上に入力補完機能(いわゆるTag Autocom
 
 ## ワイルドカード補完
 - __tagAutoComplete.py をテキストエディタで開いて WILDCARD_DIR = r'C:\my\wildcard' の値をワイルドカードを保存しているフォルダに変更してください__
-- __から開始する単語はワイルドカードとして認識されます
+- __(アンダーバー2つ) から開始する単語がワイルドカードとして認識されます
 
 ![](screenshot_02.png)
+
+## Lora補完
+- 指定したディレクトリ以下にある *.safetensors ファイルを <lora:\*:1> 形式の文字列にして補完します
+- __tagAutoComplete.py をテキストエディタで開いて LORA_DIR = r'C:\my\loras' の値をLoraファイルを保存しているフォルダに変更してください__
+- ____(アンダーバー4つ) から開始する単語がLoraとして認識されます
