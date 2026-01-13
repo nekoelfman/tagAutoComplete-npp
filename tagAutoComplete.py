@@ -42,18 +42,18 @@ from Npp import editor, notepad, console, SCINTILLANOTIFICATION, NOTIFICATION
 #   MAX_SHOW_WORDS: メニューに表示する候補の最大値
 #   REPLACE_UB_TO_SPACE: アンダーバーをスペースに置換する
 #   ESCAPE_CHAR: エスケープする特殊文字等
-#   TEXT_SEPARATER: タグの末尾に付ける区切り文字
+#   TEXT_SEPARATER: タグの末尾に付ける区切り文字(不要な場合は空にする)
 #   TRIM_SEPARATER_SPACE: タグと区切り文字の間にあるスペースを削除する
 #   OPT_WORD_IN: タグ検索時の設定
 #     - True: 部分一致(例: behindと入力した時にfrom_behindが候補に出る)
 #     - False: 前方一致(例: behindと入力した時にfrom_behindは出ない)
 #   WILDCARD_DIR: ワイルドカードファイルが保存されているディレクトリ(空にするとワイルドカード入力の補完を無効化します)
 #     - ワイルドカードファイルはテキスト形式(拡張子:txt)のみ対応しています
-#   WILDCARD_INSERT_SEPARATER: ワイルドカード補完時に末尾に区切り文字を付ける
+#   WILDCARD_ADD_SEPARATER: ワイルドカード補完時に末尾に区切り文字を付ける
 #   LORA_DIR: Loraファイルが保存されているディレクトリ(空にするとLora入力の補完を無効化します)
 #     - Loraファイルは(拡張子:safetensors)のみ対応しています
 #   LORA_DEF_STRENGTH: Lora補完で使用するデフォルトのLoraの強度
-#   LORA_INSERT_SEPARATER: Lora補完時に末尾に区切り文字を付ける
+#   LORA_ADD_SEPARATER: Lora補完時に末尾に区切り文字を付ける
 
 TARGET_FILENAME = '.txt'
 TAG_FILENAME = 'danbooru.csv'
@@ -65,10 +65,10 @@ TEXT_SEPARATER = ', '
 TRIM_SEPARATER_SPACE = True
 OPT_WORD_IN = True
 WILDCARD_DIR = r'C:\my\wildcard'
-WILDCARD_INSERT_SEPARATER = True
+WILDCARD_ADD_SEPARATER = True
 LORA_DIR = r'C:\my\loras'
 LORA_DEF_STRENGTH = '1'
-LORA_INSERT_SEPARATER = False
+LORA_ADD_SEPARATER = False
 
 
 class TagManager(object):
@@ -405,12 +405,17 @@ class TagAutoComplete(object):
                     break
                 i += 1
 
-        # 区切り文字が既に存在しているか確認する(既に区切り文字が存在する場合は新たに区切り文字を付与しない)
-        if replace_end_pos + len(TEXT_SEPARATER) <= max_len:
-            if editor.getTextRange(replace_end_pos, replace_end_pos + len(TEXT_SEPARATER)) != TEXT_SEPARATER:
-                output_text = output_text + TEXT_SEPARATER
-        else:
-            output_text = output_text + TEXT_SEPARATER # ファイル末尾の時
+        # 区切り文字の追加処理
+        add_sep = True
+        if replace_end_pos + len(TEXT_SEPARATER) <= max_len:  # ファイルの末尾ではない時
+            if editor.getTextRange(replace_end_pos, replace_end_pos + len(TEXT_SEPARATER)) == TEXT_SEPARATER:  # すでに区切り文字が存在する
+                add_sep = False
+        if self.current_word.startswith('____') and LORA_DIR:
+            add_sep = LORA_ADD_SEPARATER
+        elif self.current_word.startswith('__') and WILDCARD_DIR:
+            add_sep = WILDCARD_ADD_SEPARATER
+        if add_sep:
+            output_text += TEXT_SEPARATER  # 区切り文字を追加
 
         # 選択された元のテキストを、加工後のテキストで置き換える
         editor.setTargetRange(replace_start_pos, replace_end_pos)
@@ -418,7 +423,6 @@ class TagAutoComplete(object):
 
         # カーソル位置を計算して移動
         editor.gotoPos(replace_start_pos + len(output_text))
-
 
 
 
