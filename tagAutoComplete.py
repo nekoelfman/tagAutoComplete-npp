@@ -49,6 +49,11 @@ from Npp import editor, notepad, console, SCINTILLANOTIFICATION, NOTIFICATION
 #     - False: 前方一致(例: behindと入力した時にfrom_behindは出ない)
 #   WILDCARD_DIR: ワイルドカードファイルが保存されているディレクトリ(空にするとワイルドカード入力の補完を無効化します)
 #     - ワイルドカードファイルはテキスト形式(拡張子:txt)のみ対応しています
+#   WILDCARD_INSERT_SEPARATER: ワイルドカード補完時に末尾に区切り文字を付ける
+#   LORA_DIR: Loraファイルが保存されているディレクトリ(空にするとLora入力の補完を無効化します)
+#     - Loraファイルは(拡張子:safetensors)のみ対応しています
+#   LORA_DEF_STRENGTH: Lora補完で使用するデフォルトのLoraの強度
+#   LORA_INSERT_SEPARATER: Lora補完時に末尾に区切り文字を付ける
 
 TARGET_FILENAME = '.txt'
 TAG_FILENAME = 'danbooru.csv'
@@ -60,6 +65,10 @@ TEXT_SEPARATER = ', '
 TRIM_SEPARATER_SPACE = True
 OPT_WORD_IN = True
 WILDCARD_DIR = r'C:\my\wildcard'
+WILDCARD_INSERT_SEPARATER = True
+LORA_DIR = r'C:\my\loras'
+LORA_DEF_STRENGTH = '1'
+LORA_INSERT_SEPARATER = False
 
 
 class TagManager(object):
@@ -133,7 +142,7 @@ class WildcardManager(object):
     # ----------------------------------------------------------------------------------------
     def __init__(self):
         self.dir_list = []
-        self.txt_list = []
+        self.txt_list = []  # *.txt (not support yaml)
         self.suggest_list = []
 
     # ----------------------------------------------------------------------------------------
@@ -199,6 +208,70 @@ class WildcardManager(object):
         return len(self.suggest_list)
 
 
+class LoraManager(object):
+    """
+    Lora関連の操作を行なうクラス
+    """
+
+    # ----------------------------------------------------------------------------------------
+    def __init__(self):
+        self.lorafile_list = []  # *.safetensors or *.pt
+        self.suggest_list = []
+
+    # ----------------------------------------------------------------------------------------
+    def load_loras(self, d):
+        """
+        Loraファイル、ディレクトリの一覧を取得
+        d: Loraディレクトリのパス
+        """
+        if not os.path.exists(d):
+            return False
+        self.lorafile_list = []
+        self.suggest_list = []
+
+        # ディレクトリとファイルのリストを取得する
+        d_len = len(d) if d.endswith('\\') else len(d) + 1
+        for dirpath, dirname, files in os.walk(d):
+            for file in files:
+                if file.endswith('.safetensors'):
+                    s = os.path.join(dirpath,file)
+                    self.lorafile_list.append(s[d_len:].replace('\\','/').replace('.safetensors',''))  # ファイルパスを整形してリストに追加
+        self.suggest_list = sorted(list(filter(None, self.lorafile_list)))
+
+        return True
+
+    # ----------------------------------------------------------------------------------------
+    def lora_suggest(self, s, max_num, word_in):
+        """
+        wildcardの補完候補一覧を返す
+        s: 補完候補の取得に使用する文字列
+        max_num: 取得するデータの最大個数
+        word_in: Trueで部分一致、Falseで前方一致
+        """
+        suggestions = []
+        ss = s[4:].lower()  # 検索文字列の整形(先頭の____を削る、小文字化)
+        for word in self.suggest_list:
+            if len(suggestions) >= max_num:
+                break
+
+            if word_in:
+                if ss in word.lower():
+                    suggestions.append(word)  # 部分一致した候補をリストに追加
+            else:
+                if word.lower().startswith(ss):
+                    suggestions.append(word)  # 前方一致した候補をリストに追加
+
+        return suggestions
+
+    # ----------------------------------------------------------------------------------------
+    def get_loras_num(self):
+        """
+        Loraファイルの個数を返す
+        """
+        return len(self.suggest_list)
+
+
+
 class TagAutoComplete(object):
     _instance = None
 
@@ -215,8 +288,13 @@ class TagAutoComplete(object):
 
             self.wcm = WildcardManager()
             if WILDCARD_DIR:
-                if self.wcm.load_wildcards(WILDCARD_DIR):
+                if self.wcm.load_wildcards(WILDCARD_DIR):  # Wildcard一覧を指定したディレクトリから取得する
                     console.write("Successfully loaded {} wildcards(dirs and files) from {}\n".format(self.wcm.get_wildcard_num(), WILDCARD_DIR))
+
+            self.lom = LoraManager()
+            if LORA_DIR:
+                if self.lom.load_loras(LORA_DIR):  # Lora一覧を指定したディレクトリから取得する
+                    console.write("Successfully loaded {} Loras from {}\n".format(self.lom.get_loras_num(), LORA_DIR))
 
             self.tm = TagManager()
             if self.tm.load_tagfile(csvfile):
@@ -246,7 +324,9 @@ class TagAutoComplete(object):
         if len(self.current_word) < NUM_SHOW:
             return  # 最低入力文字数に達してない
 
-        if self.current_word.startswith('__') and WILDCARD_DIR:  # ワイルドカード補完
+        if self.current_word.startswith('____') and LORA_DIR:  # Lora補完
+            suggestions = self.lom.lora_suggest(self.current_word, MAX_SHOW_WORDS, OPT_WORD_IN)
+        elif self.current_word.startswith('__') and WILDCARD_DIR:  # ワイルドカード補完
             suggestions = self.wcm.wildcard_suggest(self.current_word, MAX_SHOW_WORDS, OPT_WORD_IN)
         else:  # タグ補完
             suggestions = self.tm.tag_suggest(self.current_word, MAX_SHOW_WORDS, OPT_WORD_IN)
@@ -281,7 +361,12 @@ class TagAutoComplete(object):
         文字列を加工する
         s: オートコンプリートで選択された候補の文字列
         """
-        if self.current_word.startswith('__') and WILDCARD_DIR:  # ワイルドカードの加工処理
+        if self.current_word.startswith('____') and LORA_DIR:  # Loraの加工処理
+            sep_pos = s.rfind('/')
+            if not sep_pos == -1:
+                s = s[sep_pos+1:]  # ファイル名だけを取得する
+            s = '<lora:' + s + ':' + LORA_DEF_STRENGTH + '>'
+        elif self.current_word.startswith('__') and WILDCARD_DIR:  # ワイルドカードの加工処理
             if self.wcm.item_is_dir(s):
                 s = s + '/*'  # 候補がディレクトリの場合は末尾に /* を付ける
             s = '__' + s + '__'
