@@ -113,7 +113,7 @@ class TagManager(object):
         """
 
         suggestions = []
-        ss = s.lower()
+        ss = s.decode('utf-8').lower()
         for word in self.tags:
             if len(suggestions) >= max_num:
                 break
@@ -178,7 +178,7 @@ class WildcardManager(object):
         word_in: Trueで部分一致、Falseで前方一致
         """
         suggestions = []
-        ss = s[2:].lower()  # 検索文字列の整形(先頭の__を削る、小文字化)
+        ss = s[2:].decode('utf-8').lower()  # 検索文字列の整形(先頭の__を削る、小文字化)
         for word in self.suggest_list:
             if len(suggestions) >= max_num:
                 break
@@ -249,7 +249,7 @@ class LoraManager(object):
         word_in: Trueで部分一致、Falseで前方一致
         """
         suggestions = []
-        ss = s[4:].lower()  # 検索文字列の整形(先頭の____を削る、小文字化)
+        ss = s[4:].decode('utf-8').lower()  # 検索文字列の整形(先頭の____を削る、小文字化)
         for word in self.suggest_list:
             if len(suggestions) >= max_num:
                 break
